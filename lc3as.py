@@ -1,13 +1,15 @@
 import re
 import struct
 import argparse
+import ast
 
 
+word_pattern = r"""\'.*?\'|".*?"|[^,\s]+"""
 label_pattern = r'^[_a-zA-Z][_a-zA-Z0-9]*$'
 br_pattern = r'^(?:BR|br)[NZPnzp]{1,3}$'
 imm_pattern = r'^[xX](-?[0-9a-fA-F]+)|#?(-?[0-9]+)$'
 reg_pattern = r'^[Rr][0-7]$'
-expr_pattern = r'^([_a-zA-Z][_a-zA-Z0-9]*)([+-][0-9]+)$'
+expr_pattern = r'^([_a-zA-Z][_a-zA-Z0-9]*)([+-])([xX](-?[0-9a-fA-F]+)|#?(-?[0-9]+))$'
 
 op_asm = {}
 pseudo_asm = {}
@@ -395,7 +397,8 @@ def calc_address(word):
             return symbol_table[word]
         match_obj = re.match(expr_pattern, word)
         if match_obj:
-            return symbol_table[match_obj.group(1)] + int(match_obj.group(2))
+            offset = calc_imm(match_obj.group(3)) * (1 if match_obj.group(2) == '+' else -1)
+            return symbol_table[match_obj.group(1)] + offset
     except KeyError:
         raise ValueError('undefined label "%s"' % word)
     return calc_imm(word)
@@ -410,6 +413,10 @@ def calc_offset(label):
         except ValueError:
             raise ValueError("%s isn't a valid label or an immediate", label)
     return offset
+
+
+def split(line):
+    return re.findall(word_pattern, line)
 
 
 def remove_comment(lines):
@@ -441,7 +448,7 @@ def parse(filename):
 
         for index, line in lines:
 
-            words = re.split(r'\s+|\s*,\s*', line)
+            words = split(line)
             words = [word.upper()
                      if word.upper() in keywords
                      else word
@@ -479,7 +486,13 @@ def parse(filename):
                             raise ValueError('LINE %d: ' % index + str(e))
                         instrs.append((index, words))
                     elif op == '.STRINGZ':
-                        cur_address = cur_address + len(words[1]) - 1
+                        try:
+                            words[1] = ast.literal_eval(words[1])
+                            if not isinstance(words[1], str):
+                                raise ValueError
+                        except Exception:
+                            raise ValueError('LINE %d: %s not a legal string' % (index, words[1]))
+                        cur_address = cur_address + len(words[1]) + 1
                         instrs.append((index, words))
                     elif op == '.END':
                         return instrs

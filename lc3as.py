@@ -450,7 +450,7 @@ def parse(filename):
 
             words = split(line)
             words = [word.upper()
-                     if word.upper() in keywords
+                     if is_keyword(word.upper())
                      else word
                      for word in words]
 
